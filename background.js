@@ -1,25 +1,31 @@
 // get the active http or https tab and its parsed url
 async function getActiveTab() {
+  // find the active tab in the current window
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.url) return null;
+
   try {
+    // parse the tab url and ensure it uses http or https
     const url = new URL(tab.url);
     if (url.protocol === "http:" || url.protocol === "https:") {
       return { tab, url };
     }
-  } catch {}
+  } catch {
+    // ignore invalid or internal chrome urls
+  }
+
   return null;
 }
 
 // check if cookie domain matches current host or any subdomain
 function hostMatches(hostname, cookieDomain) {
-  // guard against missing data
+  // guard against missing or invalid data
   if (!hostname || !cookieDomain) return false;
 
   // normalize cookie domain and remove leading dot
   const cd = cookieDomain.toLowerCase().replace(/^\./, "");
 
-  // compare hostname with cookie domain
+  // return true if hostname matches cookie domain or subdomain
   return hostname === cd || hostname.endsWith("." + cd);
 }
 
@@ -28,7 +34,7 @@ function cookieUrl(cookie) {
   // guard against invalid input
   if (!cookie || !cookie.domain) return null;
 
-  // prepare scheme, domain, and path for a full url
+  // create a normalized url for this cookie
   const scheme = cookie.secure ? "https" : "http";
   const domain = cookie.domain.toLowerCase().replace(/^\./, "");
   const path = cookie.path || "/";
@@ -38,9 +44,11 @@ function cookieUrl(cookie) {
 
 // remove all cookies that match the current host
 async function removeCookiesForHost(hostname) {
-  const all = await chrome.cookies.getAll({});
-  const target = all.filter(c => hostMatches(hostname, c.domain));
+  // fetch only cookies for this domain and its subdomains
+  const target = await chrome.cookies.getAll({ domain: hostname });
+  if (!target || target.length === 0) return 0;
 
+  // remove matching cookies including partitioned ones
   const removals = target.map(c => {
     const url = cookieUrl(c);
     if (!url) return null;
@@ -56,15 +64,17 @@ async function removeCookiesForHost(hostname) {
   return target.length;
 }
 
-// remove origin scoped cookies using browsingData api
+// remove origin-scoped cookies using the browsingData api
 async function removeOriginCookies(origin) {
+  // clear any remaining cookies tied to this origin
   try {
     await chrome.browsingData.remove({ origins: [origin], since: 0 }, { cookies: true });
   } catch {}
 }
 
-// show a short badge text on the extension icon
+// show a short badge message on the extension icon
 async function flashBadge(text, ms = 1200) {
+  // display temporary badge text for quick feedback
   try {
     await chrome.action.setBadgeText({ text });
     await chrome.action.setBadgeBackgroundColor({ color: "#333" });
@@ -76,25 +86,42 @@ async function flashBadge(text, ms = 1200) {
 async function flashIcon(ms = 800) {
   try {
     await chrome.action.setIcon({ path: "icon128_active.png" });
-    setTimeout(() => chrome.action.setIcon({ path: "icon128.png" }), ms);
   } catch {}
+  setTimeout(async () => {
+    try {
+      await chrome.action.setIcon({ path: "icon128.png" });
+    } catch {}
+  }, ms);
 }
+
+// prevent overlapping runs on rapid clicks
+let isRunning = false;
 
 // handle click on extension icon
 chrome.action.onClicked.addListener(async () => {
-  const active = await getActiveTab();
-  if (!active) {
-    await flashBadge("ERR");
+  if (isRunning) {
+    await flashBadge("...");
     return;
   }
+  isRunning = true;
 
-  const { url } = active;
-  const hostname = url.hostname;
-  const origin = url.origin;
+  try {
+    const active = await getActiveTab();
+    if (!active) {
+      await flashBadge("ERR");
+      return;
+    }
 
-  const count = await removeCookiesForHost(hostname);
-  await removeOriginCookies(origin);
+    const { url } = active;
+    const hostname = url.hostname;
+    const origin = url.origin;
 
-  await flashBadge(count > 0 ? String(Math.min(count, 999)) : "OK");
-  await flashIcon();
+    const count = await removeCookiesForHost(hostname);
+    await removeOriginCookies(origin);
+
+    await flashBadge(count > 0 ? String(Math.min(count, 999)) : "OK");
+    await flashIcon();
+  } finally {
+    isRunning = false;
+  }
 });
