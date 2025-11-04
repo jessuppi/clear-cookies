@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Clear Cookies",
+  "version": "1.0.0",
+  "description": "Easily clear cookies from the current site with a single click using this simple tool to reset login sessions and disable tracking.",
+  "permissions": [
+    "cookies",
+    "tabs",
+    "browsingData"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_title": "Clear Cookies"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "128": "icon128.png"
+  },
+  "incognito": "split"
+}
