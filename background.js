@@ -19,23 +19,29 @@ async function getActiveTab() {
 
 // set persistent badge background once on install or update
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.action.setBadgeBackgroundColor({ color: "#333" });
+  chrome.action.setBadgeBackgroundColor({ color: "#424242" });
 });
 
-// clear all site data for this origin
+// clear all persistent site data for this origin
 async function removeSiteData(origin) {
   try {
     await chrome.browsingData.remove(
       { origins: [origin], since: 0 },
       {
+        // cookies and storage
         cookies: true,
         localStorage: true,
         indexedDB: true,
-        cacheStorage: true,
-        cache: true,
-        serviceWorkers: true,
         webSQL: true,
-        fileSystems: true
+        fileSystems: true,
+
+        // caches and workers
+        cache: true, // http cache
+        cacheStorage: true, // cache api
+        serviceWorkers: true,
+
+        // legacy plugin storage (kept for completeness)
+        pluginData: true
       }
     );
   } catch {}
@@ -50,16 +56,17 @@ async function flashBadge(text, ms = 1200) {
   } catch {}
 }
 
-// briefly flash the icon to confirm action
+// briefly flash the extension icon to confirm action
 async function flashIcon(ms = 800) {
   try {
+    // switch to the "active" icon
     await chrome.action.setIcon({ path: "icon128_active.png" });
+
+    // revert back after delay
+    setTimeout(() => {
+      chrome.action.setIcon({ path: "icon128.png" }).catch(() => {});
+    }, ms);
   } catch {}
-  setTimeout(async () => {
-    try {
-      await chrome.action.setIcon({ path: "icon128.png" });
-    } catch {}
-  }, ms);
 }
 
 // prevent overlapping runs on rapid clicks
